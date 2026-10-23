@@ -1,0 +1,72 @@
+# The Faro SDK example app. Generate the Xcode project with:
+#   cd Example && xcodegen generate && open FaroExample.xcodeproj
+name: FaroExample
+options:
+  bundleIdPrefix: com.pixeldunord
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  Faro:
+    path: ..
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+targets:
+  FaroExample:
+    type: application
+    platform: iOS
+    sources: [FaroExample]
+    dependencies:
+      - package: Faro
+        product: Faro
+      - package: Faro
+        product: FaroUI
+    info:
+      path: FaroExample/Info.plist
+      properties:
+        CFBundleDisplayName: Faro SDK
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pixeldunord.faro.example
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+  FaroExampleUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [FaroExampleUITests]
+    dependencies:
+      - target: FaroExample
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pixeldunord.faro.example.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  FaroExample:
+    build:
+      targets:
+        FaroExample: all
+        FaroExampleUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - FaroExampleUITests
