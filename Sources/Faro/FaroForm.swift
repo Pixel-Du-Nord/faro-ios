@@ -208,6 +208,8 @@ public struct FaroForm: Sendable, Hashable {
     /// `false` when the organization does not have the Requests module: sending will fail.
     public let acceptsRequests: Bool
     public let source: Source
+    /// The definition it was resolved from, for ``inLocale(_:)``. Built by hand: none.
+    var origin = FormOrigin(snapshot: nil)
 
     public init(
         locale: String,
@@ -239,24 +241,31 @@ public struct FaroForm: Sendable, Hashable {
 
     /**
      A minimal form to fall back on when Faro cannot be reached and nothing is
-     cached: the three kinds, an optional name, the email and the message,
-     without texts (use your own labels).
+     cached: the three kinds, the message, the email and an optional name,
+     without texts (use your own labels). Its ``inLocale(_:)`` follows the language.
      */
     public static func fallback(locale: String? = nil) -> FaroForm {
-        FaroForm(
-            locale: FaroLocale.language(locale),
-            fields: [
-                FaroFormField(key: FaroFormField.messageKey, type: .textarea, isRequired: true),
-                FaroFormField(key: FaroFormField.emailKey, type: .email, isRequired: true),
-                FaroFormField(key: FaroFormField.nameKey, type: .text),
-            ],
-            source: .fallback
-        )
+        fallbackSnapshot.form(language: FaroLocale.language(locale), source: .fallback)
     }
+
+    private static let fallbackSnapshot = FormSnapshot(
+        requestForm: ["order": [FaroFormField.messageKey, FaroFormField.emailKey, FaroFormField.nameKey]],
+        organizationName: "", brandColor: nil, acceptsRequests: true
+    )
 
     /// The field with that key, if the form asks for it.
     public func field(_ key: String) -> FaroFormField? {
         fields.first { $0.key == key }
+    }
+
+    /**
+     The same form in another language (no network), resolved like
+     ``Faro/form(locale:)`` does. A form built by hand has a single language and
+     comes back unchanged; ``fallback(locale:)`` follows the language.
+     */
+    public func inLocale(_ locale: String) -> FaroForm {
+        guard let snapshot = origin.snapshot else { return self }
+        return snapshot.form(language: FaroLocale.language(locale), source: source)
     }
 
     // MARK: Validation
@@ -281,8 +290,14 @@ public struct FaroForm: Sendable, Hashable {
 
     /**
      Builds the request from what was typed: `message`, `email` and `name` go
-     to their own properties, the rest to ``FaroRequest/fields`` (unchecked
-     boxes and empty values are left out). Values are trimmed.
+     to their own properties, the rest to ``FaroRequest/fields`` (see
+     ``customValues(_:)``), and ``locale`` becomes the language of the emails.
+     Values are trimmed.
+
+     The name follows what the person saw: with the name turned off in the
+     form it is `""` (no name, not even the identified person's); typed empty,
+     it is `""` too; only when `values` has no `name` at all is it `nil`, which
+     lets ``Faro/send(_:)`` use the identified person's name.
      */
     public func request(
         kind: FaroKind,
@@ -292,26 +307,53 @@ public struct FaroForm: Sendable, Hashable {
         func value(_ key: String) -> String {
             (values[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        var custom: [String: String] = [:]
-        for field in fields where !field.isBuiltIn {
-            let v = value(field.key)
-            guard !v.isEmpty else { continue }
-            if field.type == .checkbox && v != "true" { continue }
-            custom[field.key] = v
-        }
-        let name = value(FaroFormField.nameKey)
         let email = value(FaroFormField.emailKey)
+        let name: String?
+        if field(FaroFormField.nameKey) == nil {
+            name = ""
+        } else {
+            name = values[FaroFormField.nameKey] == nil ? nil : value(FaroFormField.nameKey)
+        }
         var request = FaroRequest(
             kind: kind,
             message: value(FaroFormField.messageKey),
             email: email.isEmpty ? nil : email,
-            name: field(FaroFormField.nameKey) == nil || name.isEmpty ? nil : name,
-            fields: custom,
+            name: name,
+            fields: customValues(values),
             attachments: attachments
         )
         request.locale = locale
         return request
     }
+
+    /**
+     The answers to the organization's own fields, ready for
+     ``FaroRequest/fields``: built-in keys left out, values trimmed, empty
+     values and unchecked boxes dropped.
+     */
+    public func customValues(_ values: [String: String]) -> [String: String] {
+        var custom: [String: String] = [:]
+        for field in fields where !field.isBuiltIn {
+            let v = (values[field.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !v.isEmpty else { continue }
+            if field.type == .checkbox && v != "true" { continue }
+            custom[field.key] = v
+        }
+        return custom
+    }
+}
+
+/**
+ The definition a form was resolved from, so it can be resolved again in
+ another language. It never takes part in equality: two forms are equal when
+ they show the same thing.
+ */
+struct FormOrigin: @unchecked Sendable, Hashable {
+    // `FormSnapshot` is an immutable JSON tree.
+    let snapshot: FormSnapshot?
+
+    static func == (lhs: FormOrigin, rhs: FormOrigin) -> Bool { true }
+    func hash(into hasher: inout Hasher) {}
 }
 
 // MARK: - Validation rules

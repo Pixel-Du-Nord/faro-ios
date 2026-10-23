@@ -14,13 +14,19 @@ final class FakeTransport: FaroTransport, @unchecked Sendable {
         var calls: [Call] = []
         var submissions: [(Int, [String: Any])]
         var challengeCount = 0
+        var slowChallenges = 0
     }
 
     private let state: Locked<State>
+    private let challengeDelay: TimeInterval
 
-    /// Each POST takes the next scripted (status, body); challenges are generated.
-    init(submissions: [(Int, [String: Any])]) {
-        state = Locked(State(submissions: submissions))
+    /**
+     Each POST takes the next scripted (status, body); challenges are generated.
+     The first `slowChallenges` puzzles take `challengeDelay` seconds to arrive.
+     */
+    init(submissions: [(Int, [String: Any])], slowChallenges: Int = 0, challengeDelay: TimeInterval = 0) {
+        state = Locked(State(submissions: submissions, slowChallenges: slowChallenges))
+        self.challengeDelay = challengeDelay
     }
 
     var calls: [Call] { state.withLock { $0.calls } }
@@ -29,6 +35,14 @@ final class FakeTransport: FaroTransport, @unchecked Sendable {
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let path = request.url?.path ?? ""
+        if path == "/widget/challenge" {
+            let slow = state.withLock { state -> Bool in
+                guard state.slowChallenges > 0 else { return false }
+                state.slowChallenges -= 1
+                return true
+            }
+            if slow { try await Task.sleep(nanoseconds: UInt64(challengeDelay * 1_000_000_000)) }
+        }
         let (status, body): (Int, [String: Any]) = state.withLock { state in
             state.calls.append(Call(request: request))
             switch path {
@@ -262,6 +276,116 @@ final class SendTests: XCTestCase {
         } catch let error as FaroError {
             XCTAssertTrue(error.isNetwork)
         }
+    }
+
+    // MARK: 1.0.1
+
+    func testChecksMessageAndEmailBeforeTheNetwork() async throws {
+        let transport = FakeTransport(submissions: [Self.ok])
+        let client = faro(transport)
+        await XCTAssertThrowsFaroError(
+            try await client.send(FaroRequest(kind: .problem, message: " hi ", email: "a@b.co")), .invalidMessage
+        )
+        await XCTAssertThrowsFaroError(
+            try await client.send(FaroRequest(kind: .problem, message: String(repeating: "a", count: 4001),
+                                              email: "a@b.co")), .invalidMessage
+        )
+        await XCTAssertThrowsFaroError(try await client.send(FaroRequest(kind: .problem, message: "Hello")), .invalidEmail)
+        await XCTAssertThrowsFaroError(
+            try await client.send(FaroRequest(kind: .problem, message: "Hello", email: "not-an-email")), .invalidEmail
+        )
+        XCTAssertTrue(transport.calls.isEmpty, "nothing reached Faro")
+
+        // The identified person's email is enough.
+        Faro.identify(FaroUser(email: "ana@example.com"))
+        try await client.send(FaroRequest(kind: .problem, message: "Hello"))
+        XCTAssertEqual(transport.posts.count, 1)
+    }
+
+    func testAnEmptyNameSendsNoNameEvenForAnIdentifiedPerson() async throws {
+        let transport = FakeTransport(submissions: [Self.ok, Self.ok, Self.ok, Self.ok])
+        let client = faro(transport)
+        Faro.identify(FaroUser(id: "u1", email: "luis@example.com", name: "Luis"))
+        for (given, sent) in [("", ""), ("   ", ""), (nil, "Luis"), (" Ana ", "Ana")] as [(String?, String)] {
+            try await client.send(FaroRequest(kind: .problem, message: "It broke", name: given))
+            let body = try json(XCTUnwrap(transport.posts.last))
+            XCTAssertEqual(body["name"] as? String, sent, "name \(String(describing: given))")
+        }
+    }
+
+    func testAFormWithTheNameOffSendsNoName() async throws {
+        let transport = FakeTransport(submissions: [Self.ok])
+        let form = FormSnapshot(
+            requestForm: ["name": ["mode": "off"], "locales": ["en"]],
+            organizationName: "", brandColor: nil, acceptsRequests: true
+        ).form(language: "en", source: .network)
+        Faro.identify(FaroUser(id: "u1", email: "luis@example.com", name: "Luis"))
+        try await faro(transport).send(form.request(kind: .problem, values: ["message": "It broke"]))
+        let body = try json(XCTUnwrap(transport.posts.first))
+        XCTAssertEqual(body["name"] as? String, "")
+        XCTAssertEqual(body["email"] as? String, "luis@example.com")
+        XCTAssertEqual(body["locale"] as? String, "en")
+    }
+
+    func testTheLanguageIsCutToItsBase() async throws {
+        let transport = FakeTransport(submissions: [Self.ok])
+        try await faro(transport).send(FaroRequest(kind: .problem, message: "Hello", email: "a@b.co", locale: "pt-BR"))
+        XCTAssertEqual(try json(XCTUnwrap(transport.posts.first))["locale"] as? String, "pt")
+    }
+
+    func testAUserWithoutIdOrSignature() async throws {
+        let transport = FakeTransport(submissions: [Self.ok, Self.ok])
+        let client = faro(transport)
+        Faro.identify(FaroUser(email: "ana@example.com", name: "Ana"))
+        XCTAssertFalse(Faro.currentUser!.isSigned)
+        try await client.send(FaroRequest(kind: .problem, message: "Hello"))
+        var body = try json(XCTUnwrap(transport.posts.last))
+        XCTAssertNil((body["device"] as? [String: String])?["userId"])
+        XCTAssertNil(body["user"])
+        XCTAssertEqual(body["email"] as? String, "ana@example.com")
+
+        // A signature without an id cannot be checked: it does not travel.
+        Faro.identify(FaroUser(email: "ana@example.com", signature: "abc"))
+        try await client.send(FaroRequest(kind: .problem, message: "Hello"))
+        body = try json(XCTUnwrap(transport.posts.last))
+        XCTAssertNil(body["user"])
+    }
+
+    func testASendWaitingForACancelledProofMakesAnother() async throws {
+        let transport = FakeTransport(submissions: [Self.ok], slowChallenges: 1, challengeDelay: 1)
+        let client = faro(transport)
+        async let ticket = client.send(FaroRequest(kind: .problem, message: "Hello", email: "a@b.co"))
+        try await Task.sleep(nanoseconds: 200_000_000) // the send is waiting for the slow puzzle
+        client.cancelPending()                         // for example the screen closed
+        let number = try await ticket.number
+        XCTAssertEqual(number, 42)
+        XCTAssertEqual(transport.posts.count, 1)
+        // The slow puzzle never arrived; the one asked for after the cancellation is the one used.
+        let proof = try XCTUnwrap(json(XCTUnwrap(transport.posts.first))["proof"] as? [String: Any])
+        XCTAssertEqual(proof["signature"] as? String, "sig1")
+    }
+
+    func testCancelPendingKeepsASolvedProof() async throws {
+        let transport = FakeTransport(submissions: [Self.ok])
+        let client = faro(transport)
+        client.prepare()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        client.cancelPending()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        try await client.send(FaroRequest(kind: .problem, message: "Hello", email: "a@b.co"))
+        XCTAssertEqual(try json(XCTUnwrap(transport.posts.first))["proof"].flatMap { $0 as? [String: Any] }?["signature"] as? String,
+                       "sig1")
+    }
+
+    func testTheNextProofIsPreparedAfterASuccess() async throws {
+        let transport = FakeTransport(submissions: [Self.ok, Self.ok])
+        let client = faro(transport)
+        try await client.send(FaroRequest(kind: .problem, message: "Hello", email: "a@b.co"))
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(transport.challenges, 2)
+        try await client.send(FaroRequest(kind: .problem, message: "Hello again", email: "a@b.co"))
+        let signatures = try transport.posts.map { try XCTUnwrap(json($0)["proof"] as? [String: Any])["signature"] as? String }
+        XCTAssertEqual(signatures, ["sig1", "sig2"])
     }
 
     func testRequestsTheRightURLs() async throws {

@@ -3,85 +3,107 @@ import Faro
 import Foundation
 
 /**
- FaroUI's own texts in English, Spanish and Portuguese. The form's texts
- (title, labels, options…) come from the Faro panel; these cover what Faro
- does not send: the names of the request kinds, defaults for empty labels,
- errors, notices and buttons.
- */
-struct FaroStrings: Sendable {
-    let helpTitle: String
-    let defaultIntro: String
-    let close: String
-    let kindHeading: String
-    let kindProblem: String
-    let kindSuggestion: String
-    let kindQuestion: String
-    let kindProblemHint: String
-    let kindSuggestionHint: String
-    let kindQuestionHint: String
-    let kindPrompt: String
-    let nameLabel: String
-    let emailLabel: String
-    let emailHelp: String
-    let emailPlaceholder: String
-    let messageLabel: String
-    let messagePlaceholder: String
-    let optional: String
-    let chooseOption: String
-    let chooseDate: String
-    let clear: String
-    let issueRequired: String
-    let issueKind: String
-    let issueEmail: String
-    let issueShort: String
-    let issueLong: String
-    let issueInvalid: String
-    let attachmentsHeading: String
-    let screenshotCaption: String
-    let screenshotIncluded: String
-    let screenshotExcluded: String
-    let coverPrivate: String
-    let screenshotPreview: String
-    let addPhotos: String
-    let attachmentsCount: String
-    let removeImage: String
-    let editorHint: String
-    let editorCanvas: String
-    let undo: String
-    let cancel: String
-    let done: String
-    let sentWith: String
-    let sentWithDetail: String
-    let recentActions: String
-    let send: String
-    let sending: String
-    let noticeOffline: String
-    let noticeRateLimited: String
-    let noticeFailed: String
-    let noticeAttachment: String
-    let noticeUnavailable: String
-    let offlineTitle: String
-    let offlineBody: String
-    let retry: String
-    let statusConnecting: String
-    let statusCached: String
-    let statusOffline: String
-    let successTitle: String
-    let successDefault: String
-    let successReplies: String
-    let successConfirm: String
-    let sendAnother: String
+ Every text of ``FaroHelpView`` that does not come from the Faro panel.
 
-    /// The texts for a language (`"es"`, `"pt-BR"`…); English for anything else.
-    static func forLanguage(_ language: String) -> FaroStrings {
-        switch FaroLocale.language(language) {
-        case "es": return .es
-        case "pt": return .pt
-        default: return .en
+ The form's own texts (title, intro, labels, options, the send button, the
+ success message) are written by your team in Faro and win; these are the names
+ of the request kinds, hints, notices, buttons and fallbacks. Built in:
+ ``english``, ``spanish`` and ``portuguese`` (``forLocale(_:)``). For another
+ language, or your own wording, copy one and change what you need:
+
+ ```swift
+ var strings = FaroStrings.english
+ strings.kindProblem = "Report a bug"
+ FaroHelpView(strings: strings) { showHelp = false }
+ ```
+
+ Texts with `%d` and `%@` are formatted with the values described on each property.
+ */
+public struct FaroStrings: Sendable, Hashable {
+    public var helpTitle: String
+    public var defaultIntro: String
+    public var close: String
+    public var kindHeading: String
+    public var kindProblem: String
+    public var kindSuggestion: String
+    public var kindQuestion: String
+    public var kindProblemHint: String
+    public var kindSuggestionHint: String
+    public var kindQuestionHint: String
+    public var kindPrompt: String
+    public var nameLabel: String
+    public var emailLabel: String
+    public var emailHelp: String
+    public var emailPlaceholder: String
+    public var messageLabel: String
+    public var messagePlaceholder: String
+    public var optional: String
+    public var chooseOption: String
+    public var chooseDate: String
+    public var clear: String
+    public var issueRequired: String
+    public var issueKind: String
+    public var issueEmail: String
+    public var issueShort: String
+    public var issueLong: String
+    public var issueInvalid: String
+    public var attachmentsHeading: String
+    public var screenshotCaption: String
+    public var screenshotIncluded: String
+    public var screenshotExcluded: String
+    public var coverPrivate: String
+    public var screenshotPreview: String
+    public var addPhotos: String
+    /// `%d` attached, `%d` maximum.
+    public var attachmentsCount: String
+    public var removeImage: String
+    public var editorHint: String
+    /// VoiceOver description of the drawing area.
+    public var editorCanvas: String
+    /// The thick marker that covers what is under it.
+    public var toolCover: String
+    /// A filled box, for whole lines or areas.
+    public var toolBox: String
+    /// A thin pen in the accent color, to point at what went wrong.
+    public var toolMark: String
+    public var undo: String
+    public var cancel: String
+    public var done: String
+    public var sentWith: String
+    public var sentWithDetail: String
+    public var recentActions: String
+    public var send: String
+    public var sending: String
+    public var noticeOffline: String
+    public var noticeRateLimited: String
+    public var noticeFailed: String
+    public var noticeAttachment: String
+    public var noticeUnavailable: String
+    public var offlineTitle: String
+    public var offlineBody: String
+    public var retry: String
+    public var statusConnecting: String
+    public var statusCached: String
+    public var statusOffline: String
+    /// `%d` the request number.
+    public var successTitle: String
+    public var successDefault: String
+    /// `%@` the email, `%d` the request number.
+    public var successReplies: String
+    public var successConfirm: String
+    public var sendAnother: String
+
+    /// The built-in texts for a language (`"es"`, `"pt-BR"`…); English for anything else.
+    public static func forLocale(_ locale: String?) -> FaroStrings {
+        switch FaroLocale.language(locale) {
+        case "es": return .spanish
+        case "pt": return .portuguese
+        default: return .english
         }
     }
 
-    func kindName(_ kind: FaroKind) -> String {
+    /// The name people read for `kind`.
+    public func kindName(_ kind: FaroKind) -> String {
         switch kind {
         case .problem: return kindProblem
         case .suggestion: return kindSuggestion
@@ -90,7 +112,8 @@ struct FaroStrings: Sendable {
         }
     }
 
-    func kindHint(_ kind: FaroKind) -> String {
+    /// One line saying what `kind` is for.
+    public func kindHint(_ kind: FaroKind) -> String {
         switch kind {
         case .problem: return kindProblemHint
         case .suggestion: return kindSuggestionHint
@@ -109,7 +132,7 @@ struct FaroStrings: Sendable {
         }
     }
 
-    static let en = FaroStrings(
+    public static let english = FaroStrings(
         helpTitle: "Help & feedback",
         defaultIntro: "Tell us what happened. We read everything and reply by email.",
         close: "Close",
@@ -146,8 +169,11 @@ struct FaroStrings: Sendable {
         addPhotos: "Add photos",
         attachmentsCount: "%d of %d",
         removeImage: "Remove image",
-        editorHint: "Draw over anything you'd rather not send.",
-        editorCanvas: "Screenshot. Drag one finger to cover parts of it.",
+        editorHint: "Draw over anything you don't want to send: names, numbers, faces.",
+        editorCanvas: "Screenshot. Drag one finger over it to cover parts.",
+        toolCover: "Cover",
+        toolBox: "Box",
+        toolMark: "Point out",
         undo: "Undo",
         cancel: "Cancel",
         done: "Done",
@@ -174,7 +200,7 @@ struct FaroStrings: Sendable {
         sendAnother: "Send another"
     )
 
-    static let es = FaroStrings(
+    public static let spanish = FaroStrings(
         helpTitle: "Ayuda y comentarios",
         defaultIntro: "Cuéntanos qué pasó. Lo leemos todo y te respondemos por correo.",
         close: "Cerrar",
@@ -211,8 +237,11 @@ struct FaroStrings: Sendable {
         addPhotos: "Añadir fotos",
         attachmentsCount: "%d de %d",
         removeImage: "Quitar imagen",
-        editorHint: "Dibuja encima de lo que no quieras enviar.",
-        editorCanvas: "Captura. Arrastra un dedo para tapar partes.",
+        editorHint: "Dibuja encima de lo que no quieras enviar: nombres, números, caras.",
+        editorCanvas: "Captura. Arrastra un dedo encima para tapar partes.",
+        toolCover: "Tapar",
+        toolBox: "Recuadro",
+        toolMark: "Señalar",
         undo: "Deshacer",
         cancel: "Cancelar",
         done: "Listo",
@@ -239,7 +268,7 @@ struct FaroStrings: Sendable {
         sendAnother: "Enviar otra"
     )
 
-    static let pt = FaroStrings(
+    public static let portuguese = FaroStrings(
         helpTitle: "Ajuda e comentários",
         defaultIntro: "Conte o que aconteceu. Lemos tudo e respondemos por e-mail.",
         close: "Fechar",
@@ -276,8 +305,11 @@ struct FaroStrings: Sendable {
         addPhotos: "Adicionar fotos",
         attachmentsCount: "%d de %d",
         removeImage: "Remover imagem",
-        editorHint: "Desenhe sobre o que você não quiser enviar.",
-        editorCanvas: "Captura. Arraste um dedo para cobrir partes.",
+        editorHint: "Desenhe sobre o que você não quer enviar: nomes, números, rostos.",
+        editorCanvas: "Captura. Arraste o dedo por cima para cobrir partes.",
+        toolCover: "Cobrir",
+        toolBox: "Retângulo",
+        toolMark: "Indicar",
         undo: "Desfazer",
         cancel: "Cancelar",
         done: "Concluído",

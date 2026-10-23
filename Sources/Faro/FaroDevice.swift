@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit) && !os(watchOS)
+import UIKit
+#endif
 
 /**
  The device facts that travel with every request, so the team can reproduce a
@@ -14,7 +17,8 @@ import Foundation
  | `manufacturer` | `Apple` |
  | `locale` | `es_CO` |
  | `timezone` | `America/Bogota` |
- | `sdk` | `faro-ios 1.0.0` |
+ | `screen` | `1179x2556 @3x` (pixels, short side first, and the scale) |
+ | `sdk` | `faro-ios 1.0.1` |
 
  Nothing else is collected: no identifiers, no IP lookups, no location.
  */
@@ -67,9 +71,41 @@ public enum FaroDevice {
             "manufacturer": "Apple",
             "locale": Locale.current.identifier,
             "timezone": TimeZone.current.identifier,
+            "screen": screen ?? "",
             "sdk": "faro-ios \(Faro.version)",
         ]
         return facts.filter { !$0.value.isEmpty }
+    }
+
+    // MARK: Screen
+
+    /// Read once on the main thread (UIKit's screen lives there) and kept: it does not change.
+    private static let screenFact = Locked<String?>(nil)
+
+    /// The screen in pixels, short side first, and its scale: `1179x2556 @3x`. `nil` off iOS.
+    static var screen: String? {
+        if let known = screenFact.withLock({ $0 }) { return known }
+        #if canImport(UIKit) && !os(watchOS)
+        guard Thread.isMainThread else { return nil }
+        let value = MainActor.assumeIsolated { () -> String in
+            let screen = UIScreen.main
+            let size = screen.nativeBounds.size
+            let short = Int(min(size.width, size.height)), long = Int(max(size.width, size.height))
+            return "\(short)x\(long) @\(Int(screen.scale.rounded()))x"
+        }
+        screenFact.withLock { $0 = value }
+        return value
+        #else
+        return nil
+        #endif
+    }
+
+    /// Reads the screen on the main thread ahead of time, so a request sent from anywhere carries it.
+    static func primeScreen() {
+        #if canImport(UIKit) && !os(watchOS)
+        if screenFact.withLock({ $0 }) != nil { return }
+        Task { @MainActor in _ = screen }
+        #endif
     }
 
     /**

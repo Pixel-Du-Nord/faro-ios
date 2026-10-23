@@ -33,9 +33,15 @@ enum ProofOfWork {
               let challenge = puzzle["challenge"] as? String,
               let signature = puzzle["signature"] as? String else { throw FaroError.invalidResponse }
         let max = (puzzle["maxnumber"] as? NSNumber)?.intValue ?? 50_000
-        let number = try await Task.detached(priority: .userInitiated) {
+        // Off the caller's thread; cancelling the caller (cancelPending) stops the search too.
+        let solver = Task.detached(priority: .userInitiated) {
             try solve(salt: salt, challenge: challenge, max: max)
-        }.value
+        }
+        let number = try await withTaskCancellationHandler {
+            try await solver.value
+        } onCancel: {
+            solver.cancel()
+        }
         guard let number else { throw FaroError.spamCheck(reason: "unsolvable") }
         return FaroProof(salt: salt, number: number, challenge: challenge, signature: signature, receivedAt: receivedAt)
     }
@@ -114,7 +120,9 @@ actor ProofStore {
     func prepare() {
         if let ready, isFresh(ready) { return }
         if solving != nil { return }
-        start()
+        // Settled as soon as it is solved, so it is `ready` (and survives cancelSolving()).
+        let task = start()
+        Task { _ = try? await self.settle(task) }
     }
 
     /// The proof to use now: the ready one, the one being solved, or a new one.
@@ -125,13 +133,23 @@ actor ProofStore {
                 let proof = try await settle(pending)
                 if isFresh(proof) { return proof }
                 discard(proof)
-            } catch is CancellationError {
-                throw CancellationError()
             } catch {
-                // It was started earlier (maybe offline): one fresh attempt now.
+                if Task.isCancelled { throw CancellationError() }
+                // It was started earlier (maybe offline) or stopped by cancelSolving(): one fresh attempt now.
             }
         }
-        return try await settle(start())
+        do {
+            return try await settle(start())
+        } catch is CancellationError where !Task.isCancelled {
+            // cancelSolving() stopped it while this request waited: the request still needs one.
+            return try await settle(start())
+        }
+    }
+
+    /// Stops a proof being solved (the screen closed). A solved one stays ready.
+    func cancelSolving() {
+        solving?.cancel()
+        solving = nil
     }
 
     /// Waits whatever is left of Faro's minimum time for `proof`.

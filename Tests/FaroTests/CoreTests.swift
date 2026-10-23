@@ -107,8 +107,8 @@ final class AttachmentTests: XCTestCase {
         let attachment = try FaroAttachment(imageData: Self.png(width: 3200, height: 1800), filename: "My \"shot\".png")
         XCTAssertEqual(attachment.mimeType, "image/jpeg")
         XCTAssertEqual(attachment.filename, "Myshot.jpg")
-        XCTAssertEqual(attachment.pixelWidth, 1600)
-        XCTAssertEqual(attachment.pixelHeight, 900)
+        XCTAssertEqual(attachment.pixelWidth, 2048)
+        XCTAssertEqual(attachment.pixelHeight, 1152)
         XCTAssertLessThanOrEqual(attachment.data.count, FaroAttachment.maxBytes)
         XCTAssertEqual(Array(attachment.data.prefix(3)), [0xFF, 0xD8, 0xFF])
     }

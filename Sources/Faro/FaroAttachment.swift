@@ -11,7 +11,7 @@ import UIKit
 
  Creating one does the work (decoding, scaling, re-encoding), so do it off the
  main thread for large photos. A phone screenshot of 2–4 MB as PNG ends up
- around 200–400 KB and perfectly readable.
+ around 300–500 KB and perfectly readable.
  */
 public struct FaroAttachment: Sendable, Hashable, Identifiable {
     /// Faro takes up to 3 images per request.
@@ -19,7 +19,7 @@ public struct FaroAttachment: Sendable, Hashable, Identifiable {
     /// Faro's limit per image: 3 MB.
     public static let maxBytes = 3 * 1024 * 1024
     /// Images are scaled down to this many pixels on their long side.
-    public static let maxPixelSide = 1600
+    public static let maxPixelSide = 2048
 
     public let id: UUID
     /// The JPEG bytes.

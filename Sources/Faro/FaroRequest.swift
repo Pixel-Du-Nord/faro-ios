@@ -13,7 +13,11 @@ public struct FaroRequest: Sendable, Hashable {
     public var message: String
     /// Where the reply goes. `nil` uses the email of the identified user (``Faro/identify(_:)``).
     public var email: String?
-    /// The person's name. `nil` uses the identified user's.
+    /**
+     The person's name. `nil` uses the identified user's; `""` sends no name at
+     all, even for an identified person (what ``FaroForm/request(kind:values:attachments:)``
+     does when the form has the name turned off).
+     */
     public var name: String?
     /// A subject (up to 120 characters) instead of the message's first line.
     public var subject: String?
@@ -21,7 +25,10 @@ public struct FaroRequest: Sendable, Hashable {
     public var fields: [String: String]
     /// Up to ``FaroAttachment/maxCount`` images.
     public var attachments: [FaroAttachment]
-    /// The language of the emails the person will get. `nil` uses the configured one, then the device's.
+    /**
+     The language of the emails the person will get, cut to its base (`"pt-BR"`
+     → `"pt"`). `nil` uses the configured one, then the device's.
+     */
     public var locale: String?
     /**
      Extra device facts of your own (`["plan": "pro"]`). They join the automatic
@@ -97,18 +104,26 @@ public struct FaroTicket: Sendable, Hashable, Codable {
  Faro docs). Never ship the secret in the app.
  */
 public struct FaroUser: Sendable, Hashable {
-    /// Your own, stable id for the person.
-    public var id: String
+    /**
+     Your own, stable id for the person, optional. Unsigned, it travels as the
+     `userId` device fact so your team can look the person up.
+     */
+    public var id: String?
     public var email: String?
     public var name: String?
     /// HMAC-SHA256 of `id` with the identity secret, from your server.
     public var signature: String?
 
-    public init(id: String, email: String? = nil, name: String? = nil, signature: String? = nil) {
+    public init(id: String? = nil, email: String? = nil, name: String? = nil, signature: String? = nil) {
         self.id = id
         self.email = email
         self.name = name
         self.signature = signature
+    }
+
+    /// Whether Faro can verify this person: both ``id`` and ``signature`` are set.
+    public var isSigned: Bool {
+        !(id ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !(signature ?? "").isEmpty
     }
 }
 

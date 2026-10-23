@@ -17,18 +17,14 @@ struct RequestPayload: @unchecked Sendable {
         breadcrumbs: [FaroBreadcrumb],
         device: [String: String]
     ) {
-        func clean(_ text: String?) -> String {
-            (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let email = clean(request.email).isEmpty ? clean(user?.email) : clean(request.email)
-        let name = clean(request.name).isEmpty ? clean(user?.name) : clean(request.name)
+        let clean = Self.clean
         var fields: [String: Any] = [
             "key": configuration.key,
             "platform": "ios",
             "kind": request.kind.rawValue,
             "message": request.message.trimmingCharacters(in: .whitespacesAndNewlines),
-            "email": email,
-            "name": name,
+            "email": Self.email(for: request, user: user),
+            "name": Self.name(for: request, user: user),
             "locale": FaroLocale.language(request.locale ?? configuration.locale),
             "fields": request.fields.filter { !$0.value.isEmpty },
             "device": device,
@@ -38,7 +34,7 @@ struct RequestPayload: @unchecked Sendable {
         if let app = configuration.app { fields["app"] = app }
         let subject = clean(request.subject)
         if !subject.isEmpty { fields["subject"] = String(subject.prefix(120)) }
-        if let user, let signature = user.signature, !signature.isEmpty, !clean(user.id).isEmpty {
+        if let user, user.isSigned, let signature = user.signature {
             var signed: [String: Any] = ["id": clean(user.id), "signature": signature]
             if let email = user.email { signed["email"] = email }
             if let name = user.name { signed["name"] = name }
@@ -55,6 +51,22 @@ struct RequestPayload: @unchecked Sendable {
         }
         self.fields = fields
         self.attachments = request.attachments
+    }
+
+    static func clean(_ text: String?) -> String {
+        (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The request's email, else the identified person's.
+    static func email(for request: FaroRequest, user: FaroUser?) -> String {
+        let given = clean(request.email)
+        return given.isEmpty ? clean(user?.email) : given
+    }
+
+    /// `nil`: the identified person's name. Empty (or blank): no name at all, even for them.
+    static func name(for request: FaroRequest, user: FaroUser?) -> String {
+        guard let given = request.name else { return clean(user?.name) }
+        return clean(given)
     }
 
     /// The JSON with the proof added.

@@ -21,6 +21,7 @@ extension View {
        - captureScreenshot: Whether to offer a capture of the current screen as an attachment.
        - prefill: Values to start with.
        - device: Extra device facts of your own.
+       - strings: Your own texts (``FaroStrings``). `nil` picks them by language.
        - onSent: Called once the request is in.
      */
     public func faroHelpSheet(
@@ -30,17 +31,19 @@ extension View {
         captureScreenshot: Bool = true,
         prefill: FaroPrefill = FaroPrefill(),
         device: [String: String] = [:],
+        strings: FaroStrings? = nil,
         onSent: ((FaroTicket) -> Void)? = nil
     ) -> some View {
         modifier(FaroHelpSheet(
             isPresented: isPresented, faro: faro, locale: locale, captureScreenshot: captureScreenshot,
-            prefill: prefill, device: device, onSent: onSent
+            prefill: prefill, device: device, strings: strings, onSent: onSent
         ))
     }
 
     /**
      Opens ``FaroHelpView`` (with a screenshot) when the person shakes the
-     device, while this view is on screen.
+     device, while this view is on screen, with "Something's wrong" already
+     chosen (a shake usually means a problem; pass your own `prefill` to change it).
 
      It listens to the accelerometer, which needs no permission, only while the
      view is visible. The simulator has no accelerometer: there, add a button too.
@@ -51,10 +54,12 @@ extension View {
         locale: String? = nil,
         prefill: FaroPrefill = FaroPrefill(kind: .problem),
         device: [String: String] = [:],
+        strings: FaroStrings? = nil,
         onSent: ((FaroTicket) -> Void)? = nil
     ) -> some View {
         modifier(ShakeToReport(
-            isEnabled: isEnabled, faro: faro, locale: locale, prefill: prefill, device: device, onSent: onSent
+            isEnabled: isEnabled, faro: faro, locale: locale, prefill: prefill, device: device, strings: strings,
+            onSent: onSent
         ))
     }
 }
@@ -70,6 +75,7 @@ private struct FaroHelpSheet: ViewModifier {
     let captureScreenshot: Bool
     let prefill: FaroPrefill
     let device: [String: String]
+    let strings: FaroStrings?
     let onSent: ((FaroTicket) -> Void)?
 
     @State private var presented = false
@@ -92,7 +98,7 @@ private struct FaroHelpSheet: ViewModifier {
             )) {
                 FaroHelpView(
                     faro: faro, locale: locale, screenshot: screenshot, prefill: prefill, device: device,
-                    onSent: onSent
+                    strings: strings, onSent: onSent
                 ) {
                     presented = false
                     isPresented = false
@@ -117,6 +123,7 @@ private struct ShakeToReport: ViewModifier {
     let locale: String?
     let prefill: FaroPrefill
     let device: [String: String]
+    let strings: FaroStrings?
     let onSent: ((FaroTicket) -> Void)?
 
     @StateObject private var detector = ShakeDetector()
@@ -125,7 +132,8 @@ private struct ShakeToReport: ViewModifier {
     func body(content: Content) -> some View {
         content
             .faroHelpSheet(
-                isPresented: $showing, faro: faro, locale: locale, prefill: prefill, device: device, onSent: onSent
+                isPresented: $showing, faro: faro, locale: locale, prefill: prefill, device: device,
+                strings: strings, onSent: onSent
             )
             .onAppear { if isEnabled { detector.start() } }
             .onDisappear { detector.stop() }

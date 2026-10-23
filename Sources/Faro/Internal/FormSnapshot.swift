@@ -185,7 +185,7 @@ struct FormSnapshot: @unchecked Sendable {
             if FaroKind.all.contains(kind) && !kinds.contains(kind) { kinds.append(kind) }
         }
 
-        return FaroForm(
+        var form = FaroForm(
             locale: locale,
             locales: locales.isEmpty ? [locale] : locales,
             title: text(json["title"]),
@@ -199,6 +199,8 @@ struct FormSnapshot: @unchecked Sendable {
             acceptsRequests: acceptsRequests,
             source: source
         )
+        form.origin = FormOrigin(snapshot: self)
+        return form
     }
 }
 

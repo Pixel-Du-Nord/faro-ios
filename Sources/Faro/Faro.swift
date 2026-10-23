@@ -28,7 +28,7 @@ import Foundation
  */
 public final class Faro: Sendable {
     /// The SDK version, sent with every request as the `sdk` device fact.
-    public static let version = "1.0.0"
+    public static let version = "1.0.1"
 
     /// The settings this instance talks to Faro with.
     public let configuration: FaroConfiguration
@@ -64,6 +64,7 @@ public final class Faro: Sendable {
         self.proofs = ProofStore(minimumWait: minimumProofWait) {
             try await ProofOfWork.fetch(from: endpoints, transport: transport)
         }
+        FaroDevice.primeScreen()
     }
 
     // MARK: - The shared instance
@@ -73,7 +74,13 @@ public final class Faro: Sendable {
 
     /**
      Configures ``shared``. Call it once, early (for example in your `App`
-     initializer). Calling it again replaces the shared client.
+     initializer).
+
+     Calling it again (for example with another key in a debug menu) makes a new
+     ``shared`` client; an instance you already hold keeps working with the
+     configuration it was made with. The language does not need a new
+     configuration: pass it with each call (``form(locale:)``,
+     ``FaroRequest/locale``, `FaroHelpView(locale:)`).
 
      - Parameters:
        - key: The public widget key of your organization (`wk_…`), from
@@ -165,11 +172,10 @@ public final class Faro: Sendable {
      */
     public static func deviceFacts(adding extra: [String: String] = [:], includesBreadcrumbs: Bool = true) -> [String: String] {
         let user = currentUser
-        let signed = !(user?.signature ?? "").isEmpty
         return FaroDevice.compose(
             extra: extra,
             trail: includesBreadcrumbs ? BreadcrumbTrail.trail(breadcrumbs) : nil,
-            userId: signed ? nil : user?.id
+            userId: user?.isSigned == true ? nil : user?.id
         )
     }
 
@@ -226,11 +232,23 @@ public final class Faro: Sendable {
      Call it when your help screen opens. Faro does not accept a solution until
      3 seconds after the puzzle was handed out, so preparing early means the
      request goes out the moment the person taps Send. Calling it again while a
-     fresh proof is ready or being solved does nothing.
+     fresh proof is ready or being solved does nothing. After a request gets in,
+     the next proof starts on its own.
      */
     public func prepare() {
         guard configuration.isValid else { return }
         Task { await proofs.prepare() }
+    }
+
+    /**
+     Stops a proof being solved in the background, for example when your screen
+     closes, so it does not keep the CPU busy. A proof already solved is kept for
+     the next request. The client keeps working: a later ``prepare()`` or
+     ``send(_:)`` starts a new proof, and a `send` that was waiting for the
+     stopped one simply makes another.
+     */
+    public func cancelPending() {
+        Task { await proofs.cancelSolving() }
     }
 
     /**
@@ -240,7 +258,11 @@ public final class Faro: Sendable {
      called), waits whatever is left of Faro's 3 second minimum, and retries
      once with a fresh puzzle if Faro rejects the proof. After a validation
      error (a missing field, a bad email, too many requests) the same proof is
-     kept for the next attempt.
+     kept for the next attempt; after a success the next one starts right away.
+
+     Before any network call it checks what can be checked on the phone (the
+     message length, the email, the attachments) and throws the same errors Faro
+     would, so a typo does not count against Faro's hourly limit.
 
      The device facts, the identified user (``identify(_:)``) and the
      breadcrumbs (``breadcrumb(_:)``) are added automatically.
@@ -251,14 +273,12 @@ public final class Faro: Sendable {
     @discardableResult
     public func send(_ request: FaroRequest) async throws -> FaroTicket {
         try requireConfigured()
-        guard request.attachments.count <= FaroAttachment.maxCount,
-              request.attachments.allSatisfy({ $0.data.count <= FaroAttachment.maxBytes }) else {
-            throw FaroError.invalidAttachment
-        }
+        let user = Faro.currentUser
+        try Self.precheck(request, user: user)
         let payload = RequestPayload(
             request: request,
             configuration: configuration,
-            user: Faro.currentUser,
+            user: user,
             breadcrumbs: request.includesBreadcrumbs ? Faro.breadcrumbs : [],
             device: Faro.deviceFacts(adding: request.device, includesBreadcrumbs: request.includesBreadcrumbs)
         )
@@ -290,5 +310,20 @@ public final class Faro: Sendable {
 
     private func requireConfigured() throws {
         guard configuration.isValid else { throw FaroError.notConfigured }
+    }
+
+    /// Faro's own checks that need no network: message length, email, attachments.
+    static func precheck(_ request: FaroRequest, user: FaroUser?) throws {
+        let message = request.message.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count
+        guard (FaroForm.minimumMessageLength...FaroForm.maximumMessageLength).contains(message) else {
+            throw FaroError.invalidMessage
+        }
+        guard Validation.isEmail(RequestPayload.email(for: request, user: user)) else {
+            throw FaroError.invalidEmail
+        }
+        guard request.attachments.count <= FaroAttachment.maxCount,
+              request.attachments.allSatisfy({ $0.data.count <= FaroAttachment.maxBytes }) else {
+            throw FaroError.invalidAttachment
+        }
     }
 }

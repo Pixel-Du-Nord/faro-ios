@@ -21,7 +21,7 @@ Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Pixel-Du-Nord/faro-ios", from: "1.0.0"),
+    .package(url: "https://github.com/Pixel-Du-Nord/faro-ios", from: "1.0.1"),
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
@@ -53,8 +53,10 @@ struct MyApp: App {
 |---|---|
 | `key` | Your public widget key. |
 | `app` | The application's slug in Faro. Optional. |
-| `locale` | The language your app shows, if it picks one itself (`"es"`, `"pt-BR"`). `nil` uses the device's. |
+| `locale` | The default language (`"es"`, `"pt-BR"`, cut to its base: `"pt"`), for calls that do not name one. `nil` uses the device's. |
 | `apiURL` | Leave the default (`https://api-faro.pixeldunord.com`). |
+
+If your app has its own language setting, do not configure again when it changes: pass the language with each call instead (`form(locale:)`, `FaroRequest.locale` or `form.request(…)`, `FaroHelpView(locale:)`). If `configure` is called again, `Faro.shared` becomes a new client; an instance you already hold keeps working with its own configuration.
 
 ## The ready-made screen
 
@@ -100,7 +102,20 @@ RootView()
     .faroShakeToReport()
 ```
 
-Listens to the accelerometer (no permission needed) only while the view is on screen, and opens the help screen with a screenshot and the *problem* kind selected. The simulator has no accelerometer; keep a button too.
+Listens to the accelerometer (no permission needed) only while the view is on screen, and opens the help screen with a screenshot and the *problem* kind selected (pass your own `prefill` to change it). The simulator has no accelerometer; keep a button too.
+
+### Texts
+
+The texts your team writes in Faro (title, labels, options, the send button, the success message) always win. The rest (the names of the kinds, hints, notices, buttons) are `FaroStrings`, built in for English, Spanish and Portuguese and picked by language. For another language, or your own wording, copy one and change what you need:
+
+```swift
+var strings = FaroStrings.english
+strings.kindProblem = "Report a bug"
+strings.send = "Send report"
+
+FaroHelpView(strings: strings) { showHelp = false }
+// or .faroHelpSheet(isPresented: $showHelp, strings: strings), .faroShakeToReport(strings: strings)
+```
 
 ## Theme
 
@@ -122,9 +137,10 @@ Apply it once at the root (`.faroTheme(...)` on your `TabView`/`WindowGroup` con
 ```swift
 import Faro
 
-// When your screen opens.
-let form = try await Faro.shared.form()      // or Faro.shared.cachedForm() to draw instantly
+// When your screen opens. appLanguage: your app's own language ("es", "pt-BR"…), or nil.
+let form = try await Faro.shared.form(locale: appLanguage)  // or cachedForm(locale:) to draw instantly
 Faro.shared.prepare()                         // starts the anti-spam proof in the background
+// Offline with nothing cached: FaroForm.fallback(locale:) is a minimal form for your own labels.
 
 // Draw form.kinds and form.fields (already in the right language, in order).
 // Keep what is typed by field key: "message", "email", "name" and your own keys.
@@ -133,11 +149,22 @@ Faro.shared.prepare()                         // starts the anti-spam proof in t
 let issues = form.validate(kind: kind, values: values)   // Faro's own rules, locally
 guard issues.isEmpty else { return show(issues) }
 
-let screenshot = try FaroAttachment(image: capture)      // JPEG, ≤1600 px, ≤3 MB
+let screenshot = try FaroAttachment(image: capture)      // JPEG, ≤2048 px, ≤3 MB
 let ticket = try await Faro.shared.send(
     form.request(kind: kind, values: values, attachments: [screenshot])
 )
+
+// When your screen closes.
+Faro.shared.cancelPending()   // stops a proof still being solved (a solved one is kept)
 ```
+
+- `form.inLocale(_:)` gives the same form in another language without the network.
+- `form.request(kind:values:attachments:)` puts `message`, `email` and `name` in their own properties, the rest through `customValues(_:)`, and the form's language for the emails.
+- `send` checks the message (3 to 4000 characters) and the email before any network call and throws the same errors Faro would, so a typo does not count against the hourly limit.
+
+### Sending without a name
+
+`FaroRequest.name = nil` uses the identified person's name; `""` sends no name at all, even for an identified person. `form.request` follows what the person saw: with the name turned off in the form, or emptied by the person, the request has no name.
 
 Or build the request by hand:
 
@@ -151,18 +178,20 @@ try await Faro.shared.send(FaroRequest(
 ))
 ```
 
-About the proof of work: Faro asks for a small SHA-256 puzzle instead of a captcha, and does not accept its solution until 3 seconds after handing it out. Call `prepare()` when your screen opens and the request goes out the moment the person taps Send. `send` handles the rest: it waits whatever is left of the 3 s, keeps the same proof after a validation error so a corrected request does not wait again, renews it after a success, and retries once with a fresh one if Faro rejects it.
+About the proof of work: Faro asks for a small SHA-256 puzzle instead of a captcha, and does not accept its solution until 3 seconds after handing it out. Call `prepare()` when your screen opens and the request goes out the moment the person taps Send. `send` handles the rest: it waits whatever is left of the 3 s, keeps the same proof after a validation error so a corrected request does not wait again, starts the next one right after a success, and retries once with a fresh one if Faro rejects it. A `send` waiting for a proof that `cancelPending()` stopped simply makes another.
 
 ## Screenshots
 
 `FaroScreenshot.captureKeyWindow()` returns the key window as a `UIImage` (at most 2x), or `nil`. `FaroScreenshot.capture(_ view: UIView)` captures any view. Take it before presenting your help screen. Secure text fields render as dots. Nothing is captured or sent on its own: the person sees the image and decides.
 
-`FaroAttachment(imageData:)`, `FaroAttachment(image:)` and `FaroAttachment(cgImage:)` turn any image into what Faro takes: JPEG, orientation applied, transparency flattened on white, at most 1600 px on the long side and 3 MB. Up to 3 per request.
+In FaroUI, *Cover private info* opens an editor with three tools: a thick marker (three sizes) and boxes to cover names, numbers or faces, and a thin pen in the accent color to point at what went wrong. What is drawn is burnt into the image on the device; the original never leaves it.
+
+`FaroAttachment(imageData:)`, `FaroAttachment(image:)` and `FaroAttachment(cgImage:)` turn any image into what Faro takes: JPEG, orientation applied, transparency flattened on white, at most 2048 px on the long side and 3 MB. Up to 3 per request.
 
 ## Identifying the person
 
 ```swift
-Faro.identify(FaroUser(id: user.id, email: user.email, name: user.name))
+Faro.identify(FaroUser(id: user.id, email: user.email, name: user.name))  // every part is optional
 // On sign-out:
 Faro.identify(nil)
 ```
@@ -204,11 +233,12 @@ What a request carries:
 
 - What the person typed: kind, message, email, name and your form's fields.
 - The images they chose to attach (the screenshot only if they leave it on).
-- Device facts: `appVersion`, `build`, `os`, `osVersion`, `model` (the hardware identifier, like `iPhone16,2`), `manufacturer`, `locale`, `timezone`, `sdk`, plus any you add (Faro keeps 12). `Faro.deviceFacts()` returns exactly what a request sent now would carry.
+- Device facts: `appVersion`, `build`, `os`, `osVersion`, `model` (the hardware identifier, like `iPhone16,2`), `manufacturer`, `locale`, `timezone`, `screen` (pixels and scale, like `1179x2556 @3x`), `sdk`, plus any you add (Faro keeps 12). `Faro.deviceFacts()` returns exactly what a request sent now would carry.
 - The breadcrumbs you recorded (as `context.breadcrumbs`, `{ text, ago }`, and the newest ones joined in the `trail` device fact, up to 120 characters, which is what the Faro panel shows today).
 - The user you identified: signed, as `user`; unsigned, only their id as the `userId` device fact (plus the email and name, if the request has none).
+- The language for the reply emails (its base: `pt`, not `pt-BR`).
 
-What it never carries: device or advertising identifiers, location, contacts, IP lookups, or anything else from the device. There is no tracking and no analytics. The SDK stores only the cached form (Caches) and, in FaroUI, the last email and name typed (`UserDefaults`, to prefill next time; not when you call `identify`). Both targets ship a privacy manifest (`PrivacyInfo.xcprivacy`) declaring the data above as linked to the user, for app functionality, not tracking, and the required-reason APIs used (system uptime to time the proof of work; `UserDefaults`).
+What it never carries: device or advertising identifiers, location, contacts, IP lookups, or anything else from the device. There is no tracking and no analytics. The SDK stores only the cached form (Caches) and, in FaroUI, the last email and name typed (`UserDefaults`, to prefill next time; not when you call `identify`). Both targets ship a privacy manifest (`PrivacyInfo.xcprivacy`) declaring the data above as linked to the user, for app functionality, not tracking, and the required-reason APIs used (system uptime to time the proof of work; `UserDefaults`). It includes the User ID, which is only collected when your app calls `Faro.identify(_:)` with an `id`.
 
 Requests are sent over HTTPS to `api-faro.pixeldunord.com`, hosted on AWS in the United States.
 
@@ -220,24 +250,26 @@ Requests are sent over HTTPS to `api-faro.pixeldunord.com`, hosted on AWS in the
 | `Faro.shared`, `Faro(configuration:)` | The client. |
 | `form(locale:) async throws -> FaroForm` | The form, fresh (or cached if offline). |
 | `cachedForm(locale:) -> FaroForm?` | The cached form, instantly. |
-| `prepare()` | Warm up the proof of work. |
+| `prepare()`, `cancelPending()` | Warm up the proof of work; stop one being solved. |
 | `send(_:) async throws -> FaroTicket` | File a request. |
 | `Faro.identify(_:)`, `Faro.currentUser` | The person using the app. |
 | `Faro.breadcrumb(_:)`, `Faro.breadcrumbs`, `Faro.clearBreadcrumbs()` | Recent actions. |
-| `FaroForm` | `kinds`, `fields`, texts, `validate(kind:values:)`, `request(kind:values:attachments:)`, `fallback(locale:)`. |
+| `FaroForm` | `kinds`, `fields`, texts, `validate(kind:values:)`, `request(kind:values:attachments:)`, `customValues(_:)`, `inLocale(_:)`, `fallback(locale:)`. |
 | `FaroFormField`, `FaroFieldType`, `FaroFieldOption`, `FaroOptionGroup`, `FaroFieldIssue` | The fields. |
 | `FaroRequest`, `FaroKind`, `FaroAttachment`, `FaroTicket`, `FaroUser`, `FaroBreadcrumb` | What goes and comes back. |
 | `Faro.deviceFacts(adding:includesBreadcrumbs:)`, `FaroDevice.automatic()`, `FaroDevice.modelIdentifier` | The device facts. |
 | `FaroScreenshot.captureKeyWindow()`, `capture(_:)` | Screenshots (UIKit). |
 | `FaroError` | Typed errors. |
+| `FaroLocale.language(_:)` | The base language of a tag (`pt-BR` → `pt`). |
 
 | UI (`FaroUI`) | |
 |---|---|
-| `FaroHelpView(faro:locale:screenshot:prefill:device:onSent:onClose:)` | The ready-made screen. |
+| `FaroHelpView(faro:locale:screenshot:prefill:device:strings:onSent:onClose:)` | The ready-made screen. |
 | `.faroHelpSheet(isPresented:…)` | The screen in a sheet, screenshot included. |
 | `.faroShakeToReport(…)` | Shake to open it. |
 | `.faroTheme(_:)`, `FaroTheme` | Accent, shape, typography. |
 | `FaroPrefill` | Initial values. |
+| `FaroStrings` | The screen's own texts (`.english`, `.spanish`, `.portuguese`, `forLocale(_:)`). |
 
 ## Example app
 

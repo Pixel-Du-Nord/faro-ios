@@ -24,7 +24,7 @@ import UIKit
  }
  ```
 
- Or let ``SwiftUI/View/faroHelpSheet(isPresented:faro:locale:captureScreenshot:prefill:device:onSent:)``
+ Or let ``SwiftUI/View/faroHelpSheet(isPresented:faro:locale:captureScreenshot:prefill:device:strings:onSent:)``
  do the capture and the sheet for you.
  */
 public struct FaroHelpView: View {
@@ -41,6 +41,7 @@ public struct FaroHelpView: View {
          offered as the first attachment. The person can cover parts of it or leave it out.
        - prefill: Values to start with (a kind, a field…).
        - device: Extra device facts of your own (`["plan": "pro"]`). Never secrets or personal data.
+       - strings: Your own texts (``FaroStrings``). `nil` picks English, Spanish or Portuguese by language.
        - onSent: Called once the request is in.
        - onClose: Shows a close button and is called when it is tapped (and on "Done" after sending).
      */
@@ -50,11 +51,12 @@ public struct FaroHelpView: View {
         screenshot: UIImage? = nil,
         prefill: FaroPrefill = FaroPrefill(),
         device: [String: String] = [:],
+        strings: FaroStrings? = nil,
         onSent: ((FaroTicket) -> Void)? = nil,
         onClose: (() -> Void)? = nil
     ) {
         _model = StateObject(wrappedValue: HelpModel(
-            faro: faro, locale: locale, screenshot: screenshot, prefill: prefill, device: device
+            faro: faro, locale: locale, screenshot: screenshot, prefill: prefill, device: device, strings: strings
         ))
         self.onSent = onSent
         self.onClose = onClose

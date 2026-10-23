@@ -184,8 +184,51 @@ final class FormTests: XCTestCase {
         XCTAssertEqual(request.kind, .question)
         XCTAssertEqual(request.message, "¿Cómo juego?")
         XCTAssertEqual(request.email, "ana@example.com")
-        XCTAssertNil(request.name)
+        // Emptied by the person: no name, not even the identified one.
+        XCTAssertEqual(request.name, "")
         XCTAssertEqual(request.fields, ["agree": "true", "where": "casa"])
         XCTAssertEqual(request.locale, "es")
+        XCTAssertEqual(f.customValues(["agree": "true", "promo": "", "where": " casa ", "email": "x"]),
+                       ["agree": "true", "where": "casa"])
+    }
+
+    func testRequestKeepsTheNameAsThePersonLeftIt() {
+        let withName = form("es")
+        XCTAssertEqual(withName.request(kind: .problem, values: ["message": "Hola", "name": " Ana "]).name, "Ana")
+        // Never asked by your screen: nil, so send() may use the identified person's.
+        XCTAssertNil(withName.request(kind: .problem, values: ["message": "Hola"]).name)
+        // Turned off in the form: no name, whatever was typed.
+        let off = FormSnapshot(
+            requestForm: ["name": ["mode": "off"], "locales": ["en"]],
+            organizationName: "", brandColor: nil, acceptsRequests: true
+        ).form(language: "en", source: .network)
+        XCTAssertEqual(off.request(kind: .problem, values: ["message": "Hi", "name": "Ana"]).name, "")
+    }
+
+    func testInLocale() {
+        let es = form("es")
+        let en = es.inLocale("en-GB")
+        XCTAssertEqual(en.locale, "en")
+        XCTAssertEqual(en.title, "Write to us")
+        XCTAssertEqual(en.field("where")?.options.first?.label, "Online")
+        XCTAssertEqual(en.source, es.source)
+        XCTAssertEqual(en.inLocale("es"), es)
+        // Built by hand: one language, unchanged.
+        let hand = FaroForm(locale: "es", title: "Ayuda", fields: [FaroFormField(key: "message", type: .textarea)])
+        XCTAssertEqual(hand.inLocale("en"), hand)
+    }
+
+    func testFallback() {
+        let fallback = FaroForm.fallback(locale: "es-CO")
+        XCTAssertEqual(fallback.locale, "es")
+        XCTAssertEqual(fallback.source, .fallback)
+        XCTAssertEqual(fallback.fields.map(\.key), ["message", "email", "name"])
+        XCTAssertEqual(fallback.fields.map(\.isRequired), [true, true, false])
+        XCTAssertEqual(fallback.kinds, FaroKind.all)
+        XCTAssertEqual(fallback.title, "")
+        let en = fallback.inLocale("en")
+        XCTAssertEqual(en.locale, "en")
+        XCTAssertEqual(en.source, .fallback)
+        XCTAssertEqual(fallback.validate(kind: .problem, values: ["message": "It broke", "email": "a@b.co"]), [:])
     }
 }

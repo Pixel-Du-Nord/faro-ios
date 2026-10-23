@@ -83,10 +83,13 @@ final class HelpModel: ObservableObject {
     private static let emailKey = "com.pixeldunord.faro.lastEmail"
     private static let nameKey = "com.pixeldunord.faro.lastName"
 
-    init(faro: Faro, locale: String?, screenshot: UIImage?, prefill: FaroPrefill, device: [String: String]) {
+    init(
+        faro: Faro, locale: String?, screenshot: UIImage?, prefill: FaroPrefill, device: [String: String],
+        strings: FaroStrings?
+    ) {
         self.faro = faro
         self.language = FaroLocale.language(locale ?? faro.configuration.locale)
-        self.strings = FaroStrings.forLanguage(language)
+        self.strings = strings ?? FaroStrings.forLocale(language)
         self.screenshot = screenshot
         self.originalScreenshot = screenshot
         self.prefill = prefill
@@ -205,7 +208,10 @@ final class HelpModel: ObservableObject {
         issues = [:]
         let shot = includeScreenshot ? screenshot : nil
         let photos = self.photos.map(\.attachment)
-        var request = form.request(kind: kind, values: values)
+        // The name as the person left it: off in the form or emptied, no name (not the identified one).
+        var shown = values
+        if shown[FaroFormField.nameKey] == nil { shown[FaroFormField.nameKey] = "" }
+        var request = form.request(kind: kind, values: shown)
         request.locale = language
         request.device = extraDevice
         sendTask = Task {

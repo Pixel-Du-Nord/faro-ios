@@ -60,8 +60,12 @@ struct OwnUIView: View {
                 kind = form?.kinds.first ?? .question
             } catch {
                 status = error.localizedDescription
+                // Offline with nothing cached: the SDK's minimal form, with our own labels.
+                if form == nil { form = .fallback(locale: ExampleSettings.locale) }
             }
         }
+        // Leaving the screen: stop a proof still being solved (a solved one is kept).
+        .onDisappear { Faro.shared.cancelPending() }
     }
 
     private func send(_ form: FaroForm) {
