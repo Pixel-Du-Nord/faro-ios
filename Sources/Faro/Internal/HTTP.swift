@@ -47,7 +47,9 @@ enum HTTP {
             throw FaroError.from(
                 status: response.statusCode,
                 code: body?["errorCode"] as? String,
-                message: body?["message"] as? String
+                message: body?["message"] as? String,
+                field: body?["field"] as? String,
+                reason: body?["reason"] as? String
             )
         }
         guard let body else { throw FaroError.invalidResponse }

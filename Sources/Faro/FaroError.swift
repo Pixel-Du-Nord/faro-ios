@@ -105,12 +105,15 @@ public enum FaroError: Error, Sendable, Hashable {
     }
 
     /**
-     Maps an error answer from Faro: `{ "errorCode": "…", "errorNumber": 400028, "message": "…" }`.
+     Maps an error answer from Faro: `{ "errorCode": "…", "errorNumber": 400028, "message": "…",
+     "field": "…", "reason": "…" }`. `field` and `reason` come apart since Faro 2026-10-23; older
+     answers carry them in the message (`"field: where"`, `"proof: expired"`).
      */
-    static func from(status: Int, code: String?, message: String?) -> FaroError {
+    static func from(status: Int, code: String?, message: String?, field: String? = nil, reason: String? = nil) -> FaroError {
         let message = message ?? ""
         switch code {
         case "INVALID_FORM":
+            if let field, !field.isEmpty { return .invalidForm(field: field) }
             // "field: where" → "where".
             if let range = message.range(of: "field:") {
                 let field = message[range.upperBound...].trimmingCharacters(in: .whitespaces)
@@ -121,6 +124,7 @@ public enum FaroError: Error, Sendable, Hashable {
         case "INVALID_TEXT": return .invalidMessage
         case "RATE_LIMITED": return .rateLimited
         case "SPAM_CHECK_FAILED":
+            if let reason, !reason.isEmpty { return .spamCheck(reason: reason) }
             // "proof: expired" → "expired".
             let reason = message.range(of: "proof:").map {
                 message[$0.upperBound...].trimmingCharacters(in: .whitespaces)

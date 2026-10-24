@@ -44,6 +44,10 @@ final class ErrorMappingTests: XCTestCase {
                        .invalidForm(field: "where"))
         XCTAssertEqual(FaroError.from(status: 400, code: "INVALID_FORM", message: "Falta un dato"),
                        .invalidForm(field: ""))
+        XCTAssertEqual(FaroError.from(status: 400, code: "INVALID_FORM", message: "field: where", field: "order"),
+                       .invalidForm(field: "order"))
+        XCTAssertEqual(FaroError.from(status: 400, code: "SPAM_CHECK_FAILED", message: "x", reason: "expired"),
+                       .spamCheck(reason: "expired"))
         XCTAssertEqual(FaroError.from(status: 400, code: "INVALID_EMAIL_FORMAT", message: nil), .invalidEmail)
         XCTAssertEqual(FaroError.from(status: 400, code: "INVALID_TEXT", message: "x"), .invalidMessage)
         XCTAssertEqual(FaroError.from(status: 429, code: "RATE_LIMITED", message: nil), .rateLimited)

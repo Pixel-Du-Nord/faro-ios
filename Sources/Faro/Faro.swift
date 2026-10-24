@@ -28,7 +28,7 @@ import Foundation
  */
 public final class Faro: Sendable {
     /// The SDK version, sent with every request as the `sdk` device fact.
-    public static let version = "1.0.1"
+    public static let version = "1.0.2"
 
     /// The settings this instance talks to Faro with.
     public let configuration: FaroConfiguration

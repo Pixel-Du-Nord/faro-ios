@@ -21,7 +21,7 @@ Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Pixel-Du-Nord/faro-ios", from: "1.0.1"),
+    .package(url: "https://github.com/Pixel-Du-Nord/faro-ios", from: "1.0.2"),
 ],
 targets: [
     .target(name: "MyApp", dependencies: [

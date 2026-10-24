@@ -18,7 +18,7 @@ import UIKit
  | `locale` | `es_CO` |
  | `timezone` | `America/Bogota` |
  | `screen` | `1179x2556 @3x` (pixels, short side first, and the scale) |
- | `sdk` | `faro-ios 1.0.1` |
+ | `sdk` | `faro-ios 1.0.2` |
 
  Nothing else is collected: no identifiers, no IP lookups, no location.
  */
